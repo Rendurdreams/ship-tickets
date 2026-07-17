@@ -49,7 +49,7 @@ Ship Tickets is the rebuild of Mix Tickets, the ticketing venture Justin started
 - **Frontend/API:** Next.js 16 App Router, TypeScript, Tailwind, and Route Handlers in `apps/web`
 - **Business logic:** framework-neutral use cases and domain contracts in `packages/core`
 - **Database:** standard PostgreSQL via Drizzle behind `packages/db`; Supabase Postgres is the first hosted target
-- **Auth:** provider-neutral `packages/auth`; an open Postgres-backed default is planned, with Privy optional when embedded wallets are needed
+- **Auth:** provider-neutral `packages/auth`; Supabase Auth phone OTP is the canonical MVP login/session provider for Tier 0/1, with Privy trusting the same session via JWT-based auth when embedded wallets are enabled (see [`docs/decisions/0003-supabase-phone-auth-and-privy-wallets.md`](./docs/decisions/0003-supabase-phone-auth-and-privy-wallets.md))
 - **Storage:** minimal S3-compatible interface in `packages/storage`
 - **Email:** provider interface in `packages/email`, with console and Resend drivers planned first
 - **Payments:** free/self-hosted/Mixt Hosted policy in `packages/payments`; Stripe Connect is the first paid adapter
@@ -90,7 +90,7 @@ The codebase treats infrastructure as configurable, not coupled. A self-hoster o
 
 - **Database:** standard Postgres connection string via `DATABASE_URL`. Queries go through Drizzle ORM (speaks Postgres wire protocol, no vendor SDK). Works identically on Supabase, Aurora, RDS, Neon, Railway, self-hosted — any Postgres ≥14.
 - **Storage:** S3-compatible API via `STORAGE_ENDPOINT` + credentials. The AWS S3 SDK works against Supabase Storage, MinIO, Cloudflare R2, AWS S3, any S3-compatible target. No Supabase Storage SDK imported anywhere in the codebase.
-- **Auth:** internal user IDs are provider-independent. `packages/auth` selects an open default, test adapter, or optional Privy adapter; application code does not depend on a provider subject format.
+- **Auth:** internal user IDs are provider-independent. `packages/auth` selects the Supabase Auth adapter, a deterministic test adapter, or an optional Privy wallet-linking adapter; application code does not depend on a provider subject format. Every domain record references the internal user id; an `auth_identities` table maps unique `(provider, subject)` pairs to it.
 - **Email:** abstracted behind a `send(to, template, vars)` function with provider drivers: `resend`, `ses`, `sendgrid`, `console-log` (for dev). New drivers are ~30 lines each.
 - **Payments:** Stripe and Solana are independent modules, enabled per deployment via env config. Tier 0 self-host can run Stripe-only, Solana-only, both, or neither (test mode).
 - **Realtime:** door-scan live counts default to 1-second polling. WebSockets via Supabase Realtime is opt-in via `REALTIME_PROVIDER=supabase` and treated as enhancement, not a dependency.
@@ -215,11 +215,11 @@ Each slice is one focused work session, ends with a working demo, gets its own c
 *Goal: deploy the tested Next.js skeleton, then add provider-neutral auth and PostgreSQL through the established abstractions. Repo public, deploy pipeline live.*
 - Monorepo (Turborepo): `apps/web`, `packages/core`, `packages/config`, `packages/db`, `packages/auth`, `packages/payments`, `packages/storage`, `packages/email`, `packages/shared`
 - `packages/db` uses Drizzle against a standard Postgres `DATABASE_URL`. No Supabase client.
-- `packages/auth` exposes a provider-neutral contract; implement test and open Postgres-backed adapters first, with Privy optional later.
+- `packages/auth` exposes a provider-neutral contract; implement a deterministic test adapter and the Supabase Auth phone OTP adapter first, with Privy optional later (per [ADR 0003](./docs/decisions/0003-supabase-phone-auth-and-privy-wallets.md)).
 - `packages/storage` uses the AWS S3 SDK against `STORAGE_ENDPOINT` (set to Supabase Storage for MVP).
 - `packages/email` exports `send()` with a `resend` driver for now; `console-log` driver for dev.
 - Supabase project created, RLS enabled, initial schema migrated via Drizzle migrations
-- Privy SDK integrated, email + embedded wallet login working in the Next.js app
+- Supabase Auth phone OTP login working in the Next.js app; Privy stays optional and is not required for Slice 1
 - Next.js Route Handler `GET /api/me` returns the authenticated user via `packages/auth`
 - Vercel deployment connected to `main`, env vars wired
 - `.env.example` committed with placeholders for every backend choice (DB, storage, auth, email, payments)
