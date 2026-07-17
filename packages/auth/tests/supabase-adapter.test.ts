@@ -11,6 +11,8 @@ function createFakeSupabaseClient(
     auth: {
       signInWithOtp: vi.fn().mockResolvedValue({ error: null }),
       verifyOtp: vi.fn(),
+      refreshSession: vi.fn(),
+      setSession: vi.fn().mockResolvedValue({ error: null }),
       signOut: vi.fn().mockResolvedValue({ error: null }),
       getUser: vi.fn(),
       ...overrides,
@@ -51,6 +53,85 @@ describe("createSupabaseAuthProvider", () => {
       ok: false,
       error: { code: "otp_request_failed" },
     });
+    if (result.ok) throw new Error("expected failure");
+    expect(result.error.message).not.toContain("rate limited");
+  });
+
+  it("normalizes E.164 phones and forwards a CAPTCHA token", async () => {
+    const client = createFakeSupabaseClient();
+    const provider = createSupabaseAuthProvider({
+      client,
+      identityStore: new InMemoryAuthIdentityStore(),
+    });
+
+    const result = await provider.requestPhoneOtp({
+      captchaToken: "turnstile-token",
+      phone: "+1 (555) 555-0000",
+    });
+
+    expect(result).toEqual({ ok: true, value: undefined });
+    expect(client.auth.signInWithOtp).toHaveBeenCalledWith({
+      options: { captchaToken: "turnstile-token" },
+      phone: "+15555550000",
+    });
+  });
+
+  it("rejects an invalid phone without calling Supabase", async () => {
+    const client = createFakeSupabaseClient();
+    const provider = createSupabaseAuthProvider({
+      client,
+      identityStore: new InMemoryAuthIdentityStore(),
+    });
+
+    const result = await provider.requestPhoneOtp({ phone: "555-0000" });
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: { code: "invalid_phone" },
+    });
+    expect(client.auth.signInWithOtp).not.toHaveBeenCalled();
+  });
+
+  it("classifies provider rate limits without exposing provider text", async () => {
+    const client = createFakeSupabaseClient({
+      signInWithOtp: vi.fn().mockResolvedValue({
+        error: {
+          code: "over_request_rate_limit",
+          message: "provider-internal rate text",
+          status: 429,
+        },
+      }),
+    });
+    const provider = createSupabaseAuthProvider({
+      client,
+      identityStore: new InMemoryAuthIdentityStore(),
+    });
+
+    const result = await provider.requestPhoneOtp({ phone: "+15555550000" });
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: { code: "rate_limited" },
+    });
+    if (result.ok) throw new Error("expected failure");
+    expect(result.error.message).not.toContain("provider-internal");
+  });
+
+  it("returns provider_error when the SDK throws", async () => {
+    const client = createFakeSupabaseClient({
+      signInWithOtp: vi.fn().mockRejectedValue(new Error("network details")),
+    });
+    const provider = createSupabaseAuthProvider({
+      client,
+      identityStore: new InMemoryAuthIdentityStore(),
+    });
+
+    const result = await provider.requestPhoneOtp({ phone: "+15555550000" });
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: { code: "provider_error" },
+    });
   });
 
   it("verifies the OTP, links the Supabase subject through the identity store, and returns an internal user id", async () => {
@@ -58,7 +139,11 @@ describe("createSupabaseAuthProvider", () => {
       verifyOtp: vi.fn().mockResolvedValue({
         data: {
           user: { id: "supabase-user-1" },
-          session: { access_token: "supabase-jwt-1" },
+          session: {
+            access_token: "supabase-jwt-1",
+            expires_at: 1_900_000_000,
+            refresh_token: "supabase-refresh-1",
+          },
         },
         error: null,
       }),
@@ -78,7 +163,11 @@ describe("createSupabaseAuthProvider", () => {
     });
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error("expected success");
-    expect(result.value.sessionToken).toBe("supabase-jwt-1");
+    expect(result.value).toMatchObject({
+      accessToken: "supabase-jwt-1",
+      expiresAt: 1_900_000_000,
+      refreshToken: "supabase-refresh-1",
+    });
 
     const linked = await identityStore.findIdentity(
       "supabase_phone",
@@ -92,7 +181,11 @@ describe("createSupabaseAuthProvider", () => {
       verifyOtp: vi.fn().mockResolvedValue({
         data: {
           user: { id: "supabase-user-2" },
-          session: { access_token: "supabase-jwt-2" },
+          session: {
+            access_token: "supabase-jwt-2",
+            expires_at: 1_900_000_000,
+            refresh_token: "supabase-refresh-2",
+          },
         },
         error: null,
       }),
@@ -133,6 +226,31 @@ describe("createSupabaseAuthProvider", () => {
     expect(result).toMatchObject({ ok: false, error: { code: "invalid_otp" } });
   });
 
+  it("distinguishes provider OTP failures from invalid codes", async () => {
+    const client = createFakeSupabaseClient({
+      verifyOtp: vi.fn().mockResolvedValue({
+        data: { user: null, session: null },
+        error: { code: "unexpected_failure", message: "internal outage" },
+      }),
+    });
+    const provider = createSupabaseAuthProvider({
+      client,
+      identityStore: new InMemoryAuthIdentityStore(),
+    });
+
+    const result = await provider.verifyPhoneOtp({
+      code: "000000",
+      phone: "+15555550000",
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: { code: "otp_verification_failed" },
+    });
+    if (result.ok) throw new Error("expected failure");
+    expect(result.error.message).not.toContain("internal outage");
+  });
+
   it("looks up the current user for a valid Supabase session token via the linked identity", async () => {
     const client = createFakeSupabaseClient({
       getUser: vi.fn().mockResolvedValue({
@@ -148,7 +266,7 @@ describe("createSupabaseAuthProvider", () => {
     const provider = createSupabaseAuthProvider({ client, identityStore });
 
     const result = await provider.getCurrentUser({
-      sessionToken: "supabase-jwt-3",
+      accessToken: "supabase-jwt-3",
     });
 
     expect(client.auth.getUser).toHaveBeenCalledWith("supabase-jwt-3");
@@ -166,9 +284,46 @@ describe("createSupabaseAuthProvider", () => {
       identityStore: new InMemoryAuthIdentityStore(),
     });
 
-    const result = await provider.getCurrentUser({ sessionToken: "stale-jwt" });
+    const result = await provider.getCurrentUser({ accessToken: "stale-jwt" });
 
     expect(result).toEqual({ ok: true, value: null });
+  });
+
+  it("returns null only for an explicitly invalid session", async () => {
+    const client = createFakeSupabaseClient({
+      getUser: vi.fn().mockResolvedValue({
+        data: { user: null },
+        error: { code: "bad_jwt", message: "invalid JWT" },
+      }),
+    });
+    const provider = createSupabaseAuthProvider({
+      client,
+      identityStore: new InMemoryAuthIdentityStore(),
+    });
+
+    await expect(
+      provider.getCurrentUser({ accessToken: "invalid-jwt" }),
+    ).resolves.toEqual({ ok: true, value: null });
+  });
+
+  it("returns provider_error when current-user lookup is unavailable", async () => {
+    const client = createFakeSupabaseClient({
+      getUser: vi.fn().mockResolvedValue({
+        data: { user: null },
+        error: { code: "unexpected_failure", message: "database outage" },
+      }),
+    });
+    const provider = createSupabaseAuthProvider({
+      client,
+      identityStore: new InMemoryAuthIdentityStore(),
+    });
+
+    const result = await provider.getCurrentUser({ accessToken: "valid-jwt" });
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: { code: "provider_error" },
+    });
   });
 
   it("returns a typed error when a Supabase session has no linked internal identity yet", async () => {
@@ -183,7 +338,7 @@ describe("createSupabaseAuthProvider", () => {
       identityStore: new InMemoryAuthIdentityStore(),
     });
 
-    const result = await provider.getCurrentUser({ sessionToken: "some-jwt" });
+    const result = await provider.getCurrentUser({ accessToken: "some-jwt" });
 
     expect(result).toMatchObject({
       ok: false,
@@ -198,10 +353,17 @@ describe("createSupabaseAuthProvider", () => {
       identityStore: new InMemoryAuthIdentityStore(),
     });
 
-    const result = await provider.logout({ sessionToken: "supabase-jwt-1" });
+    const result = await provider.logout({
+      accessToken: "supabase-jwt-1",
+      refreshToken: "supabase-refresh-1",
+    });
 
     expect(result).toEqual({ ok: true, value: undefined });
-    expect(client.auth.signOut).toHaveBeenCalled();
+    expect(client.auth.setSession).toHaveBeenCalledWith({
+      access_token: "supabase-jwt-1",
+      refresh_token: "supabase-refresh-1",
+    });
+    expect(client.auth.signOut).toHaveBeenCalledWith({ scope: "local" });
   });
 
   it("treats a SQL-injection-shaped Supabase user id as an exact opaque subject", async () => {
@@ -210,7 +372,11 @@ describe("createSupabaseAuthProvider", () => {
       verifyOtp: vi.fn().mockResolvedValue({
         data: {
           user: { id: maliciousId },
-          session: { access_token: "supabase-jwt-injection" },
+          session: {
+            access_token: "supabase-jwt-injection",
+            expires_at: 1_900_000_000,
+            refresh_token: "supabase-refresh-injection",
+          },
         },
         error: null,
       }),

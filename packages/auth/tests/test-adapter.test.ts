@@ -57,7 +57,8 @@ describe("createTestAuthProvider", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error("expected success");
     expect(result.value.userId).toEqual(expect.any(String));
-    expect(result.value.sessionToken).toEqual(expect.any(String));
+    expect(result.value.accessToken).toEqual(expect.any(String));
+    expect(result.value.refreshToken).toEqual(expect.any(String));
 
     const linked = await identityStore.findIdentity(
       "test_phone",
@@ -86,6 +87,36 @@ describe("createTestAuthProvider", () => {
     expect(second.value.userId).toBe(first.value.userId);
   });
 
+  it("rotates refresh tokens and invalidates the previous token", async () => {
+    const identityStore = new InMemoryAuthIdentityStore();
+    const provider = createTestAuthProvider({ identityStore });
+    await provider.requestPhoneOtp({ phone: "+1 (555) 555-0000" });
+    const verified = await provider.verifyPhoneOtp({
+      code: provider.fixedOtpCodeForTesting,
+      phone: "+15555550000",
+    });
+    if (!verified.ok) throw new Error("expected success");
+
+    const refreshed = await provider.refreshSession({
+      refreshToken: verified.value.refreshToken,
+    });
+    const replayed = await provider.refreshSession({
+      refreshToken: verified.value.refreshToken,
+    });
+
+    expect(refreshed).toMatchObject({
+      ok: true,
+      value: { userId: verified.value.userId },
+    });
+    expect(replayed).toMatchObject({
+      ok: false,
+      error: { code: "invalid_session" },
+    });
+    await expect(
+      identityStore.findIdentity("test_phone", "+15555550000"),
+    ).resolves.toMatchObject({ userId: verified.value.userId });
+  });
+
   it("looks up the current user for a valid session token", async () => {
     const identityStore = new InMemoryAuthIdentityStore();
     const provider = createTestAuthProvider({ identityStore });
@@ -97,7 +128,7 @@ describe("createTestAuthProvider", () => {
     if (!verified.ok) throw new Error("expected success");
 
     const current = await provider.getCurrentUser({
-      sessionToken: verified.value.sessionToken,
+      accessToken: verified.value.accessToken,
     });
 
     expect(current).toEqual({ ok: true, value: { id: verified.value.userId } });
@@ -109,7 +140,7 @@ describe("createTestAuthProvider", () => {
     });
 
     const current = await provider.getCurrentUser({
-      sessionToken: "not-a-real-token",
+      accessToken: "not-a-real-token",
     });
 
     expect(current).toEqual({ ok: true, value: null });
@@ -126,10 +157,11 @@ describe("createTestAuthProvider", () => {
     if (!verified.ok) throw new Error("expected success");
 
     const logoutResult = await provider.logout({
-      sessionToken: verified.value.sessionToken,
+      accessToken: verified.value.accessToken,
+      refreshToken: verified.value.refreshToken,
     });
     const current = await provider.getCurrentUser({
-      sessionToken: verified.value.sessionToken,
+      accessToken: verified.value.accessToken,
     });
 
     expect(logoutResult).toEqual({ ok: true, value: undefined });
@@ -144,8 +176,10 @@ describe("createTestAuthProvider", () => {
       subject: "+15559998888",
     });
 
-    const sessionToken = provider.seedSessionForTesting(identity.userId);
-    const current = await provider.getCurrentUser({ sessionToken });
+    const session = provider.seedSessionForTesting(identity.userId);
+    const current = await provider.getCurrentUser({
+      accessToken: session.accessToken,
+    });
 
     expect(current).toEqual({ ok: true, value: { id: identity.userId } });
   });

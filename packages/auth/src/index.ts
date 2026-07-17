@@ -7,6 +7,7 @@ export {
   type AuthenticatedUser,
   type CurrentUserInput,
   type LogoutInput,
+  type RefreshSessionInput,
   type RequestPhoneOtpInput,
   type VerifyPhoneOtpInput,
 } from "./types";
@@ -17,6 +18,8 @@ export {
   type AuthIdentityStore,
   type CreateUserWithIdentityInput,
 } from "./identity-store";
+
+export { normalizeE164Phone } from "./phone";
 
 export {
   createTestAuthProvider,

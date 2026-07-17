@@ -6,7 +6,10 @@ export type AuthErrorCode =
   | "otp_not_requested"
   | "otp_request_failed"
   | "invalid_otp"
+  | "invalid_phone"
+  | "invalid_session"
   | "otp_verification_failed"
+  | "rate_limited"
   | "identity_conflict"
   | "identity_not_linked"
   | "provider_error";
@@ -34,6 +37,7 @@ export function err<T>(code: AuthErrorCode, message: string): AuthResult<T> {
 }
 
 export interface RequestPhoneOtpInput {
+  readonly captchaToken?: string;
   readonly phone: string;
 }
 
@@ -43,21 +47,29 @@ export interface VerifyPhoneOtpInput {
 }
 
 export interface LogoutInput {
-  readonly sessionToken: string;
+  readonly accessToken: string;
+  readonly refreshToken: string;
 }
 
 export interface CurrentUserInput {
-  readonly sessionToken: string;
+  readonly accessToken: string;
+}
+
+export interface RefreshSessionInput {
+  readonly refreshToken: string;
 }
 
 export interface AuthSession {
+  readonly accessToken: string;
+  readonly expiresAt: number | null;
+  readonly refreshToken: string;
   readonly userId: string;
-  readonly sessionToken: string;
 }
 
 export interface AuthProvider {
   requestPhoneOtp(input: RequestPhoneOtpInput): Promise<AuthResult<void>>;
   verifyPhoneOtp(input: VerifyPhoneOtpInput): Promise<AuthResult<AuthSession>>;
+  refreshSession(input: RefreshSessionInput): Promise<AuthResult<AuthSession>>;
   logout(input: LogoutInput): Promise<AuthResult<void>>;
   getCurrentUser(
     input: CurrentUserInput,

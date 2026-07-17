@@ -1,9 +1,14 @@
 import { z } from "zod";
 
 const AuthConfigInputSchema = z.object({
-  AUTH_PROVIDER: z.enum(["mock", "supabase_phone"]).default("mock"),
+  AUTH_PROVIDER: z.enum(["mock", "supabase_phone"]),
+  DEPLOYMENT_MODE: z
+    .enum(["development", "self_hosted", "mixt_hosted"])
+    .default("development"),
   NEXT_PUBLIC_SUPABASE_URL: z.string().optional(),
   NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: z.string().optional(),
+  NODE_ENV: z.enum(["development", "test", "production"]).optional(),
+  VERCEL_ENV: z.enum(["development", "preview", "production"]).optional(),
 });
 
 export interface TestAuthConfig {
@@ -29,6 +34,18 @@ export function loadAuthConfig(
   const parsed = AuthConfigInputSchema.parse(environment);
 
   if (parsed.AUTH_PROVIDER === "mock") {
+    if (parsed.DEPLOYMENT_MODE !== "development") {
+      throw new Error(
+        "AUTH_PROVIDER=mock is allowed only when DEPLOYMENT_MODE=development",
+      );
+    }
+    if (
+      parsed.NODE_ENV === "production" ||
+      parsed.VERCEL_ENV === "production"
+    ) {
+      throw new Error("AUTH_PROVIDER=mock is not allowed in production");
+    }
+
     return { provider: "mock" };
   }
 
@@ -47,10 +64,19 @@ export function loadAuthConfig(
     );
   }
 
+  let parsedSupabaseUrl: URL;
+
   try {
-    new URL(supabaseUrl);
+    parsedSupabaseUrl = new URL(supabaseUrl);
   } catch {
     throw new Error("NEXT_PUBLIC_SUPABASE_URL must be a valid URL");
+  }
+
+  if (
+    parsedSupabaseUrl.protocol !== "http:" &&
+    parsedSupabaseUrl.protocol !== "https:"
+  ) {
+    throw new Error("NEXT_PUBLIC_SUPABASE_URL must use HTTP or HTTPS");
   }
 
   return { provider: "supabase_phone", supabaseUrl, supabasePublishableKey };
