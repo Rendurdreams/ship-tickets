@@ -127,9 +127,11 @@ an internal, provider-independent user id.
   `apps/web` or `packages/core`.
 - A new `auth_identities` table joins the schema in CLAUDE.md §5 (implemented via Drizzle
   migrations in a follow-up PR).
-- Supabase Auth (GoTrue) runs alongside Supabase Postgres for Tier 0/1, so self-hosters who
-  already run Supabase for the database get auth "for free" from the same stack — no new
-  vendor account required beyond what CLAUDE.md §4.5 already assumes.
+- Supabase Auth (GoTrue) is bundled with and self-hostable alongside Supabase Postgres for
+  Tier 0/1, so self-hosters who already run Supabase for the database do not need a second
+  auth _service_. Phone OTP itself is not free, though: it still requires a self-hoster or
+  Mixt Hosted to configure and pay a separate SMS provider (e.g. Twilio) per outbound
+  message — that per-message cost and account setup is not eliminated by this decision.
 - Embedded wallets (Tier 2) become a strictly additive slice: linking a wallet never
   requires re-architecting how existing users, orders, or tickets are identified, because
   every domain table already points at the internal `users.id`.
@@ -175,5 +177,7 @@ an internal, provider-independent user id.
 
 - Supabase — Phone Login: <https://supabase.com/docs/guides/auth/phone-login>
 - Supabase — Identity Linking: <https://supabase.com/docs/guides/auth/auth-identity-linking>
+- Supabase — Creating a Server-Side Client (SSR): <https://supabase.com/docs/guides/auth/server-side/creating-a-client>
+- Supabase — Passkeys: <https://supabase.com/docs/guides/auth/passkeys>
 - Privy — JWT-based Authentication: <https://docs.privy.io/authentication/user-authentication/jwt-based-auth/overview>
 - Privy — SMS / WhatsApp Login Methods: <https://docs.privy.io/authentication/user-authentication/login-methods/sms-whatsapp>
