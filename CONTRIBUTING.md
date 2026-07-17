@@ -10,6 +10,8 @@ Thanks for helping make fair ticketing infrastructure available to more venues.
 
 ## Development workflow
 
+Prerequisites are Node.js 24, pnpm 11, and a running Docker daemon. The database integration test starts a short-lived PostgreSQL 16 container and removes it after the test.
+
 ```bash
 corepack enable
 corepack prepare pnpm@11.13.1 --activate
