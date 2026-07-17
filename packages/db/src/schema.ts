@@ -66,7 +66,7 @@ export const organizations = pgTable(
 );
 
 export const organizationMembers = pgTable(
-  "organization_members",
+  "org_members",
   {
     orgId: uuid("org_id")
       .notNull()
@@ -82,9 +82,9 @@ export const organizationMembers = pgTable(
   (table) => [
     primaryKey({
       columns: [table.orgId, table.userId],
-      name: "organization_members_org_id_user_id_pk",
+      name: "org_members_org_id_user_id_pk",
     }),
-    index("organization_members_user_id_index").on(table.userId),
+    index("org_members_user_id_index").on(table.userId),
   ],
 );
 

@@ -7,12 +7,12 @@ CREATE TABLE "auth_identities" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "organization_members" (
+CREATE TABLE "org_members" (
 	"org_id" uuid NOT NULL,
 	"user_id" uuid NOT NULL,
 	"role" "organization_role" NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "organization_members_org_id_user_id_pk" PRIMARY KEY("org_id","user_id")
+	CONSTRAINT "org_members_org_id_user_id_pk" PRIMARY KEY("org_id","user_id")
 );
 --> statement-breakpoint
 CREATE TABLE "organizations" (
@@ -33,9 +33,9 @@ CREATE TABLE "users" (
 );
 --> statement-breakpoint
 ALTER TABLE "auth_identities" ADD CONSTRAINT "auth_identities_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "organization_members" ADD CONSTRAINT "organization_members_org_id_organizations_id_fk" FOREIGN KEY ("org_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "organization_members" ADD CONSTRAINT "organization_members_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "org_members" ADD CONSTRAINT "org_members_org_id_organizations_id_fk" FOREIGN KEY ("org_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "org_members" ADD CONSTRAINT "org_members_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE UNIQUE INDEX "auth_identities_provider_subject_unique" ON "auth_identities" USING btree ("provider","subject");--> statement-breakpoint
 CREATE INDEX "auth_identities_user_id_index" ON "auth_identities" USING btree ("user_id");--> statement-breakpoint
-CREATE INDEX "organization_members_user_id_index" ON "organization_members" USING btree ("user_id");--> statement-breakpoint
+CREATE INDEX "org_members_user_id_index" ON "org_members" USING btree ("user_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "organizations_slug_unique" ON "organizations" USING btree ("slug");

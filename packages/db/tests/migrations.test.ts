@@ -41,14 +41,14 @@ describe("database migrations", () => {
             'users',
             'auth_identities',
             'organizations',
-            'organization_members'
+            'org_members'
           )
         order by table_name
       `;
 
       expect(rows.map((row) => row.table_name)).toEqual([
         "auth_identities",
-        "organization_members",
+        "org_members",
         "organizations",
         "users",
       ]);
