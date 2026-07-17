@@ -1,9 +1,9 @@
 import { fileURLToPath } from "node:url";
 
-import { loadDatabaseConfig } from "./config";
+import { loadDatabaseMigrationConfig } from "./config";
 import { migrateDatabase } from "./migrate";
 
-const config = loadDatabaseConfig(process.env);
+const config = loadDatabaseMigrationConfig(process.env);
 const migrationsFolder = fileURLToPath(
   new URL("../migrations", import.meta.url),
 );

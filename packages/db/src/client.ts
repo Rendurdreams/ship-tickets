@@ -4,16 +4,107 @@ import postgres from "postgres";
 import type { DatabaseConfig } from "./config";
 import * as schema from "./schema";
 
-export function createDatabaseClient(config: DatabaseConfig) {
-  const client = postgres(config.databaseUrl);
-  const db = drizzle(client, { schema });
+export interface RuntimeSecurityState {
+  readonly bypassesRls: boolean;
+  readonly canCreatePublic: boolean;
+  readonly hasRequiredTablePrivileges: boolean;
+  readonly isSuperuser: boolean;
+  readonly ownsApplicationTables: boolean;
+  readonly role: string;
+}
 
+export function assertRuntimeSecurityState(state: RuntimeSecurityState): void {
+  const unsafeCapabilities = [
+    state.isSuperuser && "is a superuser",
+    state.bypassesRls && "has BYPASSRLS",
+    state.ownsApplicationTables && "owns an application table",
+    state.canCreatePublic && "can create objects in the public schema",
+    !state.hasRequiredTablePrivileges && "lacks required table privileges",
+  ].filter(Boolean);
+
+  if (unsafeCapabilities.length > 0) {
+    throw new Error(
+      `DATABASE_URL role ${state.role} is not a safe runtime principal: ${unsafeCapabilities.join(
+        ", ",
+      )}`,
+    );
+  }
+}
+
+export function toPostgresOptions(config: DatabaseConfig) {
   return {
-    db,
-    async close(): Promise<void> {
-      await client.end();
-    },
+    max: config.maxConnections,
+    prepare: config.prepareStatements,
   };
 }
 
-export type ShipTicketsDatabase = ReturnType<typeof createDatabaseClient>["db"];
+export async function createDatabaseClient(config: DatabaseConfig) {
+  const client = postgres(config.databaseUrl, toPostgresOptions(config));
+
+  try {
+    const [securityState] = await client<RuntimeSecurityState[]>`
+      select
+        current_user as role,
+        roles.rolsuper as "isSuperuser",
+        roles.rolbypassrls as "bypassesRls",
+        has_schema_privilege(
+          current_user,
+          'public',
+          'create'
+        ) as "canCreatePublic",
+        exists (
+          select 1
+          from pg_class tables
+          inner join pg_namespace schemas on schemas.oid = tables.relnamespace
+          where schemas.nspname = 'public'
+            and tables.relname in (
+              'users',
+              'auth_identities',
+              'organizations',
+              'org_members'
+            )
+            and tables.relowner = roles.oid
+        ) as "ownsApplicationTables",
+        has_table_privilege(
+          current_user,
+          'users',
+          'select, insert'
+        ) and has_table_privilege(
+          current_user,
+          'auth_identities',
+          'select, insert'
+        ) and has_table_privilege(
+          current_user,
+          'organizations',
+          'select, insert, update, delete'
+        ) and has_table_privilege(
+          current_user,
+          'org_members',
+          'select, insert, update, delete'
+        ) as "hasRequiredTablePrivileges"
+      from pg_roles roles
+      where roles.rolname = current_user
+    `;
+
+    if (!securityState) {
+      throw new Error("DATABASE_URL did not resolve to a PostgreSQL role");
+    }
+
+    assertRuntimeSecurityState(securityState);
+    const db = drizzle(client, { schema });
+
+    return {
+      db,
+      async close(): Promise<void> {
+        await client.end();
+      },
+    };
+  } catch (error) {
+    await client.end().catch(() => undefined);
+    throw error;
+  }
+}
+
+export type ShipTicketsDatabase = Awaited<
+  ReturnType<typeof createDatabaseClient>
+>["db"];

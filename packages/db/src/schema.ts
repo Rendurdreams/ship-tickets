@@ -1,6 +1,8 @@
+import { sql } from "drizzle-orm";
 import {
   index,
   pgEnum,
+  pgPolicy,
   pgTable,
   primaryKey,
   text,
@@ -62,8 +64,16 @@ export const organizations = pgTable(
     slug: text("slug").notNull(),
     ...timestamps,
   },
-  (table) => [uniqueIndex("organizations_slug_unique").on(table.slug)],
-);
+  (table) => [
+    uniqueIndex("organizations_slug_unique").on(table.slug),
+    pgPolicy("organizations_tenant_isolation", {
+      for: "all",
+      to: "public",
+      using: sql`${table.id} = nullif(current_setting('app.current_org_id', true), '')::uuid`,
+      withCheck: sql`${table.id} = nullif(current_setting('app.current_org_id', true), '')::uuid`,
+    }),
+  ],
+).enableRLS();
 
 export const organizationMembers = pgTable(
   "org_members",
@@ -85,8 +95,14 @@ export const organizationMembers = pgTable(
       name: "org_members_org_id_user_id_pk",
     }),
     index("org_members_user_id_index").on(table.userId),
+    pgPolicy("org_members_tenant_isolation", {
+      for: "all",
+      to: "public",
+      using: sql`${table.orgId} = nullif(current_setting('app.current_org_id', true), '')::uuid`,
+      withCheck: sql`${table.orgId} = nullif(current_setting('app.current_org_id', true), '')::uuid`,
+    }),
   ],
-);
+).enableRLS();
 
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
