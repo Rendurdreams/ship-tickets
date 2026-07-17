@@ -1,0 +1,55 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: dark;
+  --background: #070806;
+  --foreground: #f4f1e8;
+  --muted: #a7a69d;
+  --line: rgba(244, 241, 232, 0.12);
+  --signal: #d6ff65;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--background);
+  scroll-behavior: smooth;
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  background:
+    radial-gradient(
+      circle at 14% 8%,
+      rgba(214, 255, 101, 0.1),
+      transparent 28rem
+    ),
+    radial-gradient(
+      circle at 88% 24%,
+      rgba(80, 96, 66, 0.13),
+      transparent 32rem
+    ),
+    var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+a {
+  color: inherit;
+}
+
+::selection {
+  background: var(--signal);
+  color: #10120c;
+}
+
+.grid-field {
+  background-image:
+    linear-gradient(var(--line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--line) 1px, transparent 1px);
+  background-size: 52px 52px;
+  mask-image: linear-gradient(to bottom, black, transparent 78%);
+}

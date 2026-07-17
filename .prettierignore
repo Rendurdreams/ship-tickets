@@ -1,0 +1,11 @@
+.next
+coverage
+dist
+node_modules
+pnpm-lock.yaml
+
+# Preserve the original planning/source notes verbatim.
+CLAUDE.md
+CONTENT_SYSTEM (1).md
+IDEA.md
+ORIGIN_POST_NOTES.md

@@ -1,0 +1,41 @@
+name: Feature proposal
+description: Propose a focused product or engineering outcome
+title: "feat: "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Who has this problem, and what can they not do today?
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: Describe observable behavior, not a preferred implementation.
+    validations:
+      required: true
+  - type: dropdown
+    id: target
+    attributes:
+      label: Deployment target
+      options:
+        - Both self-hosted and Mixt Hosted
+        - Self-hosted
+        - Mixt Hosted
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Constraints and alternatives
+      description: Include privacy, tenant, payment, scanner, or operational implications.
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope confirmation
+      options:
+        - label: I searched existing issues and Discussions first.
+          required: true

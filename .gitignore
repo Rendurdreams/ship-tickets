@@ -1,0 +1,24 @@
+# Dependencies and build output
+node_modules/
+.next/
+dist/
+coverage/
+.turbo/
+*.tsbuildinfo
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+apps/web/.env.local
+
+# Deployment and tooling state
+.vercel/
+.hermes/
+
+# Logs and editor/OS files
+*.log
+pnpm-debug.log*
+.DS_Store
+.idea/
+.vscode/
