@@ -48,7 +48,6 @@ export interface VerifyPhoneOtpInput {
 
 export interface LogoutInput {
   readonly accessToken: string;
-  readonly refreshToken: string;
 }
 
 export interface CurrentUserInput {
@@ -70,6 +69,7 @@ export interface AuthProvider {
   requestPhoneOtp(input: RequestPhoneOtpInput): Promise<AuthResult<void>>;
   verifyPhoneOtp(input: VerifyPhoneOtpInput): Promise<AuthResult<AuthSession>>;
   refreshSession(input: RefreshSessionInput): Promise<AuthResult<AuthSession>>;
+  /** Revokes the session identified by this access JWT. The JWT remains valid until expiry. */
   logout(input: LogoutInput): Promise<AuthResult<void>>;
   getCurrentUser(
     input: CurrentUserInput,

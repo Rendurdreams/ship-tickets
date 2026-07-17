@@ -4,9 +4,18 @@ import { loadAuthConfig } from "../src/config";
 
 describe("loadAuthConfig", () => {
   it("selects the deterministic mock adapter only when explicitly configured", () => {
-    const config = loadAuthConfig({ AUTH_PROVIDER: "mock" });
+    const config = loadAuthConfig({
+      AUTH_PROVIDER: "mock",
+      DEPLOYMENT_MODE: "development",
+    });
 
     expect(config).toEqual({ provider: "mock" });
+  });
+
+  it("rejects mock auth when deployment mode is omitted", () => {
+    expect(() => loadAuthConfig({ AUTH_PROVIDER: "mock" })).toThrow(
+      /mock.*development/i,
+    );
   });
 
   it("fails closed when AUTH_PROVIDER is omitted", () => {

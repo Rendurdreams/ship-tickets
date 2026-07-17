@@ -13,6 +13,9 @@ import {
 function createSessionClient() {
   return {
     auth: {
+      admin: {
+        signOut: vi.fn().mockResolvedValue({ error: null }),
+      },
       getUser: vi.fn(),
       refreshSession: vi.fn().mockResolvedValue({
         data: {
@@ -25,12 +28,7 @@ function createSessionClient() {
         },
         error: null,
       }),
-      setSession: vi.fn().mockResolvedValue({
-        data: { session: null, user: null },
-        error: null,
-      }),
       signInWithOtp: vi.fn().mockResolvedValue({ error: null }),
-      signOut: vi.fn().mockResolvedValue({ error: null }),
       verifyOtp: vi.fn().mockResolvedValue({
         data: {
           user: { id: "supabase-session-user" },
@@ -75,7 +73,7 @@ describe("Supabase session lifecycle", () => {
     });
   });
 
-  it("binds the supplied token pair before signing out only that session", async () => {
+  it("signs out only the session identified by the supplied access token", async () => {
     const client = createSessionClient();
     const provider = createSupabaseAuthProvider({
       client: client as unknown as SupabaseAuthClient,
@@ -84,15 +82,13 @@ describe("Supabase session lifecycle", () => {
 
     const result = await provider.logout({
       accessToken: "access-to-revoke",
-      refreshToken: "refresh-to-revoke",
-    } as never);
+    });
 
     expect(result).toEqual({ ok: true, value: undefined });
-    expect(client.auth.setSession).toHaveBeenCalledWith({
-      access_token: "access-to-revoke",
-      refresh_token: "refresh-to-revoke",
-    });
-    expect(client.auth.signOut).toHaveBeenCalledWith({ scope: "local" });
+    expect(client.auth.admin.signOut).toHaveBeenCalledWith(
+      "access-to-revoke",
+      "local",
+    );
   });
 
   it("isolates concurrent logout state in separate Supabase clients", async () => {
@@ -110,17 +106,48 @@ describe("Supabase session lifecycle", () => {
     const provider = createSupabaseAuthProvider(options);
 
     await Promise.all([
-      provider.logout({ accessToken: "access-a", refreshToken: "refresh-a" }),
-      provider.logout({ accessToken: "access-b", refreshToken: "refresh-b" }),
+      provider.logout({ accessToken: "access-a" }),
+      provider.logout({ accessToken: "access-b" }),
     ]);
 
     expect(clientFactory).toHaveBeenCalledTimes(2);
-    expect(firstClient.auth.setSession).toHaveBeenCalledWith({
-      access_token: "access-a",
+    expect(firstClient.auth.admin.signOut).toHaveBeenCalledWith(
+      "access-a",
+      "local",
+    );
+    expect(secondClient.auth.admin.signOut).toHaveBeenCalledWith(
+      "access-b",
+      "local",
+    );
+  });
+
+  it("isolates concurrent refresh state in separate Supabase clients", async () => {
+    const firstClient = createSessionClient();
+    const secondClient = createSessionClient();
+    const clientFactory = vi
+      .fn()
+      .mockReturnValueOnce(firstClient)
+      .mockReturnValueOnce(secondClient);
+    const identityStore = new InMemoryAuthIdentityStore();
+    await identityStore.createUserWithIdentity({
+      provider: "supabase_phone",
+      subject: "supabase-session-user",
+    });
+    const provider = createSupabaseAuthProvider({
+      clientFactory,
+      identityStore,
+    });
+
+    await Promise.all([
+      provider.refreshSession({ refreshToken: "refresh-a" }),
+      provider.refreshSession({ refreshToken: "refresh-b" }),
+    ]);
+
+    expect(clientFactory).toHaveBeenCalledTimes(2);
+    expect(firstClient.auth.refreshSession).toHaveBeenCalledWith({
       refresh_token: "refresh-a",
     });
-    expect(secondClient.auth.setSession).toHaveBeenCalledWith({
-      access_token: "access-b",
+    expect(secondClient.auth.refreshSession).toHaveBeenCalledWith({
       refresh_token: "refresh-b",
     });
   });

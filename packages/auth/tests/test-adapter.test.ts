@@ -158,7 +158,6 @@ describe("createTestAuthProvider", () => {
 
     const logoutResult = await provider.logout({
       accessToken: verified.value.accessToken,
-      refreshToken: verified.value.refreshToken,
     });
     const current = await provider.getCurrentUser({
       accessToken: verified.value.accessToken,
@@ -166,6 +165,48 @@ describe("createTestAuthProvider", () => {
 
     expect(logoutResult).toEqual({ ok: true, value: undefined });
     expect(current).toEqual({ ok: true, value: null });
+  });
+
+  it("logs out one access-token session without invalidating another", async () => {
+    const provider = createTestAuthProvider({
+      identityStore: new InMemoryAuthIdentityStore(),
+    });
+    const first = provider.seedSessionForTesting("user-a");
+    const second = provider.seedSessionForTesting("user-b");
+
+    const result = await provider.logout({ accessToken: first.accessToken });
+
+    expect(result).toEqual({ ok: true, value: undefined });
+    await expect(
+      provider.getCurrentUser({ accessToken: first.accessToken }),
+    ).resolves.toEqual({ ok: true, value: null });
+    await expect(
+      provider.getCurrentUser({ accessToken: second.accessToken }),
+    ).resolves.toEqual({ ok: true, value: { id: "user-b" } });
+  });
+
+  it("revokes every rotated credential when logging out with a prior access token", async () => {
+    const provider = createTestAuthProvider({
+      identityStore: new InMemoryAuthIdentityStore(),
+    });
+    const initial = provider.seedSessionForTesting("user-a");
+    const refreshed = await provider.refreshSession({
+      refreshToken: initial.refreshToken,
+    });
+    if (!refreshed.ok) throw new Error("expected refresh success");
+
+    const result = await provider.logout({ accessToken: initial.accessToken });
+
+    expect(result).toEqual({ ok: true, value: undefined });
+    await expect(
+      provider.getCurrentUser({ accessToken: refreshed.value.accessToken }),
+    ).resolves.toEqual({ ok: true, value: null });
+    await expect(
+      provider.refreshSession({ refreshToken: refreshed.value.refreshToken }),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { code: "invalid_session" },
+    });
   });
 
   it("allows tests to seed a session directly without going through the OTP flow", async () => {

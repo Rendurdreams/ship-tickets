@@ -29,9 +29,10 @@ interface SupabaseAuthSession {
 }
 
 interface SupabaseAuthApiError {
-  readonly code?: string;
+  readonly code?: string | undefined;
   readonly message: string;
-  readonly status?: number;
+  readonly name?: string | undefined;
+  readonly status?: number | undefined;
 }
 
 /**
@@ -41,6 +42,12 @@ interface SupabaseAuthApiError {
  */
 export interface SupabaseAuthClient {
   auth: {
+    admin: {
+      signOut(
+        jwt: string,
+        scope: "local",
+      ): Promise<{ error: SupabaseAuthApiError | null }>;
+    };
     signInWithOtp(params: {
       phone: string;
       options?: { captchaToken?: string };
@@ -59,13 +66,6 @@ export interface SupabaseAuthClient {
       };
       error: SupabaseAuthApiError | null;
     }>;
-    setSession(params: {
-      access_token: string;
-      refresh_token: string;
-    }): Promise<{ error: SupabaseAuthApiError | null }>;
-    signOut(params: {
-      scope: "local";
-    }): Promise<{ error: SupabaseAuthApiError | null }>;
     getUser(jwt: string): Promise<{
       data: { user: SupabaseAuthUser | null };
       error: SupabaseAuthApiError | null;
@@ -96,25 +96,34 @@ function isRateLimited(error: SupabaseAuthApiError): boolean {
   return (
     error.status === 429 ||
     error.code === "over_request_rate_limit" ||
-    error.code === "over_email_send_rate_limit"
+    error.code === "over_email_send_rate_limit" ||
+    error.code === "over_sms_send_rate_limit"
   );
 }
 
 function isInvalidSession(error: SupabaseAuthApiError): boolean {
   return (
+    error.name === "AuthSessionMissingError" ||
+    error.name === "AuthInvalidJwtError" ||
     error.code === "bad_jwt" ||
+    error.code === "invalid_jwt" ||
     error.code === "jwt_expired" ||
+    error.code === "session_expired" ||
     error.code === "session_not_found" ||
     error.code === "refresh_token_not_found" ||
     error.code === "refresh_token_already_used"
   );
 }
 
-function isInvalidOtp(error: SupabaseAuthApiError): boolean {
+function isProviderUnavailable(error: SupabaseAuthApiError): boolean {
   return (
-    error.code === "otp_expired" ||
-    /invalid.*(?:otp|token)|(?:otp|token).*invalid/i.test(error.message)
+    error.name === "AuthRetryableFetchError" ||
+    (error.status !== undefined && error.status >= 500)
   );
+}
+
+function isInvalidOtp(error: SupabaseAuthApiError): boolean {
+  return error.code === "otp_expired";
 }
 
 function toAuthSession(
@@ -199,7 +208,7 @@ export function createSupabaseAuthProvider(
           detectSessionInUrl: false,
           persistSession: false,
         },
-      }) as unknown as SupabaseAuthClient;
+      });
   }
 
   return {
@@ -222,6 +231,9 @@ export function createSupabaseAuthProvider(
         if (error) {
           if (isRateLimited(error)) {
             return err("rate_limited", "Too many authentication attempts");
+          }
+          if (isProviderUnavailable(error)) {
+            return err("provider_error", "Authentication provider unavailable");
           }
           return err("otp_request_failed", "Could not request a phone code");
         }
@@ -249,6 +261,9 @@ export function createSupabaseAuthProvider(
         if (error) {
           if (isRateLimited(error)) {
             return err("rate_limited", "Too many authentication attempts");
+          }
+          if (isProviderUnavailable(error)) {
+            return err("provider_error", "Authentication provider unavailable");
           }
           if (isInvalidOtp(error)) {
             return err("invalid_otp", "The phone code is invalid or expired");
@@ -314,17 +329,18 @@ export function createSupabaseAuthProvider(
     async logout(input: LogoutInput): Promise<AuthResult<void>> {
       try {
         const client = clientFactory();
-        const { error: sessionError } = await client.auth.setSession({
-          access_token: input.accessToken,
-          refresh_token: input.refreshToken,
-        });
-        if (sessionError) {
-          return err("invalid_session", "The session is no longer valid");
-        }
-
-        const { error } = await client.auth.signOut({ scope: "local" });
+        const { error } = await client.auth.admin.signOut(
+          input.accessToken,
+          "local",
+        );
         if (error) {
-          return err("provider_error", "Could not end the session");
+          if (isRateLimited(error)) {
+            return err("rate_limited", "Too many authentication attempts");
+          }
+          if (isInvalidSession(error)) {
+            return err("invalid_session", "The session is no longer valid");
+          }
+          return err("provider_error", "Authentication provider unavailable");
         }
         return ok(undefined);
       } catch {

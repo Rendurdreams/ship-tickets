@@ -4,7 +4,7 @@ const AuthConfigInputSchema = z.object({
   AUTH_PROVIDER: z.enum(["mock", "supabase_phone"]),
   DEPLOYMENT_MODE: z
     .enum(["development", "self_hosted", "mixt_hosted"])
-    .default("development"),
+    .optional(),
   NEXT_PUBLIC_SUPABASE_URL: z.string().optional(),
   NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: z.string().optional(),
   NODE_ENV: z.enum(["development", "test", "production"]).optional(),

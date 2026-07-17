@@ -20,6 +20,11 @@ const TEST_PROVIDER = "test_phone";
 const FIXED_OTP_CODE = "000000";
 const TEST_EXPIRES_AT = 4_102_444_800;
 
+interface TestSessionRecord {
+  readonly sessionId: string;
+  readonly userId: string;
+}
+
 export interface TestAuthProviderOptions {
   readonly identityStore: AuthIdentityStore;
 }
@@ -46,19 +51,24 @@ export function createTestAuthProvider(
 ): TestAuthProvider {
   const { identityStore } = options;
   const pendingOtpsByPhone = new Map<string, string>();
-  const userIdByAccessToken = new Map<string, string>();
-  const userIdByRefreshToken = new Map<string, string>();
+  const sessionByAccessToken = new Map<string, TestSessionRecord>();
+  const sessionByRefreshToken = new Map<string, TestSessionRecord>();
 
-  function seedSessionForTesting(userId: string): AuthSession {
+  function issueSession(userId: string, sessionId: string): AuthSession {
     const session: AuthSession = {
       accessToken: `test-access-${randomUUID()}`,
       expiresAt: TEST_EXPIRES_AT,
       refreshToken: `test-refresh-${randomUUID()}`,
       userId,
     };
-    userIdByAccessToken.set(session.accessToken, userId);
-    userIdByRefreshToken.set(session.refreshToken, userId);
+    const record = { sessionId, userId };
+    sessionByAccessToken.set(session.accessToken, record);
+    sessionByRefreshToken.set(session.refreshToken, record);
     return session;
+  }
+
+  function seedSessionForTesting(userId: string): AuthSession {
+    return issueSession(userId, randomUUID());
   }
 
   return {
@@ -118,25 +128,37 @@ export function createTestAuthProvider(
     async refreshSession(
       input: RefreshSessionInput,
     ): Promise<AuthResult<AuthSession>> {
-      const userId = userIdByRefreshToken.get(input.refreshToken);
-      if (!userId) {
+      const session = sessionByRefreshToken.get(input.refreshToken);
+      if (!session) {
         return err("invalid_session", "The session is no longer valid");
       }
-      userIdByRefreshToken.delete(input.refreshToken);
-      return ok(seedSessionForTesting(userId));
+      sessionByRefreshToken.delete(input.refreshToken);
+      return ok(issueSession(session.userId, session.sessionId));
     },
 
     async logout(input: LogoutInput): Promise<AuthResult<void>> {
-      userIdByAccessToken.delete(input.accessToken);
-      userIdByRefreshToken.delete(input.refreshToken);
+      const session = sessionByAccessToken.get(input.accessToken);
+      if (!session) {
+        return err("invalid_session", "The session is no longer valid");
+      }
+      for (const [token, candidate] of sessionByAccessToken) {
+        if (candidate.sessionId === session.sessionId) {
+          sessionByAccessToken.delete(token);
+        }
+      }
+      for (const [token, candidate] of sessionByRefreshToken) {
+        if (candidate.sessionId === session.sessionId) {
+          sessionByRefreshToken.delete(token);
+        }
+      }
       return ok(undefined);
     },
 
     async getCurrentUser(
       input: CurrentUserInput,
     ): Promise<AuthResult<AuthenticatedUser | null>> {
-      const userId = userIdByAccessToken.get(input.accessToken);
-      return ok(userId ? { id: userId } : null);
+      const session = sessionByAccessToken.get(input.accessToken);
+      return ok(session ? { id: session.userId } : null);
     },
   };
 }
