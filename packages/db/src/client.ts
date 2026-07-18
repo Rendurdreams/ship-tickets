@@ -6,8 +6,13 @@ import * as schema from "./schema";
 
 export interface RuntimeSecurityState {
   readonly bypassesRls: boolean;
+  readonly canCreateDatabases: boolean;
   readonly canCreatePublic: boolean;
+  readonly canCreateRoles: boolean;
+  readonly canReplicate: boolean;
   readonly hasRequiredTablePrivileges: boolean;
+  readonly hasRoleMemberships: boolean;
+  readonly hasRoleOverride: boolean;
   readonly isSuperuser: boolean;
   readonly ownsApplicationTables: boolean;
   readonly role: string;
@@ -17,6 +22,11 @@ export function assertRuntimeSecurityState(state: RuntimeSecurityState): void {
   const unsafeCapabilities = [
     state.isSuperuser && "is a superuser",
     state.bypassesRls && "has BYPASSRLS",
+    state.canCreateDatabases && "has CREATEDB",
+    state.canCreateRoles && "has CREATEROLE",
+    state.canReplicate && "has REPLICATION",
+    state.hasRoleMemberships && "has a role membership",
+    state.hasRoleOverride && "does not match the authenticated session user",
     state.ownsApplicationTables && "owns an application table",
     state.canCreatePublic && "can create objects in the public schema",
     !state.hasRequiredTablePrivileges && "lacks required table privileges",
@@ -44,11 +54,20 @@ export async function createDatabaseClient(config: DatabaseConfig) {
   try {
     const [securityState] = await client<RuntimeSecurityState[]>`
       select
-        current_user as role,
+        session_user as role,
+        current_user <> session_user as "hasRoleOverride",
         roles.rolsuper as "isSuperuser",
         roles.rolbypassrls as "bypassesRls",
+        roles.rolcreatedb as "canCreateDatabases",
+        roles.rolcreaterole as "canCreateRoles",
+        roles.rolreplication as "canReplicate",
+        exists (
+          select 1
+          from pg_auth_members memberships
+          where memberships.member = roles.oid
+        ) as "hasRoleMemberships",
         has_schema_privilege(
-          current_user,
+          session_user,
           'public',
           'create'
         ) as "canCreatePublic",
@@ -66,24 +85,24 @@ export async function createDatabaseClient(config: DatabaseConfig) {
             and tables.relowner = roles.oid
         ) as "ownsApplicationTables",
         has_table_privilege(
-          current_user,
+          session_user,
           'users',
           'select, insert'
         ) and has_table_privilege(
-          current_user,
+          session_user,
           'auth_identities',
           'select, insert'
         ) and has_table_privilege(
-          current_user,
+          session_user,
           'organizations',
           'select, insert, update, delete'
         ) and has_table_privilege(
-          current_user,
+          session_user,
           'org_members',
           'select, insert, update, delete'
         ) as "hasRequiredTablePrivileges"
       from pg_roles roles
-      where roles.rolname = current_user
+      where roles.rolname = session_user
     `;
 
     if (!securityState) {

@@ -9,7 +9,7 @@ Provider-neutral PostgreSQL access for Ship Tickets. Application code imports th
 - `DATABASE_MAX_CONNECTIONS` defaults to `1` per application instance and is limited to `1..20`.
 - `DATABASE_PREPARE_STATEMENTS` defaults to `false` because transaction-mode poolers such as Supavisor do not support prepared statements reliably.
 
-`createDatabaseClient` checks the live PostgreSQL role before returning a Drizzle handle. It refuses a superuser, `BYPASSRLS` role, tenant-table owner, role that can create in `public`, or role missing required table privileges.
+`createDatabaseClient` attests the authenticated PostgreSQL `session_user` before returning a Drizzle handle. The dedicated runtime login must equal `current_user`, have no role memberships, own no application tables, and have none of `SUPERUSER`, `BYPASSRLS`, `CREATEDB`, `CREATEROLE`, replication, or `CREATE` on `public`. It must hold the required table grants directly.
 
 ## Runtime role provisioning
 
@@ -20,7 +20,7 @@ Database migrations contain only database-local schema, indexes, and RLS policie
 3. Run `pnpm --filter @ship-tickets/db db:provision-runtime-role` once per database.
 4. Set `DATABASE_URL` to the provisioned login's runtime/pooler connection.
 
-The idempotent provisioning command creates or hardens the shared `NOLOGIN` `ship_tickets_app` group, revokes inherited `CREATE` on `public`, grants the minimum identity and tenant-table privileges, and attaches the existing runtime login. It never creates login credentials.
+The idempotent provisioning command rejects logins with role memberships, revokes inherited `CREATE` on `public`, and grants the minimum identity and tenant-table privileges directly to the named login in that database. It creates neither credentials nor shared cluster-global grant roles, so provisioning one database cannot authorize another database's runtime login.
 
 ## Tenant isolation
 

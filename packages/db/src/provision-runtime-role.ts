@@ -5,6 +5,10 @@ import type { DatabaseProvisionConfig } from "./config";
 interface ExistingRuntimeRole {
   readonly bypassesRls: boolean;
   readonly canLogin: boolean;
+  readonly canCreateDatabases: boolean;
+  readonly canCreateRoles: boolean;
+  readonly canReplicate: boolean;
+  readonly hasRoleMemberships: boolean;
   readonly isSuperuser: boolean;
   readonly ownsApplicationTables: boolean;
 }
@@ -20,6 +24,14 @@ export async function provisionRuntimeRole(
         roles.rolcanlogin as "canLogin",
         roles.rolsuper as "isSuperuser",
         roles.rolbypassrls as "bypassesRls",
+        roles.rolcreatedb as "canCreateDatabases",
+        roles.rolcreaterole as "canCreateRoles",
+        roles.rolreplication as "canReplicate",
+        exists (
+          select 1
+          from pg_auth_members memberships
+          where memberships.member = roles.oid
+        ) as "hasRoleMemberships",
         exists (
           select 1
           from pg_class tables
@@ -43,10 +55,24 @@ export async function provisionRuntimeRole(
       );
     }
 
+    if (runtimeRole.ownsApplicationTables) {
+      throw new Error(
+        `DATABASE_RUNTIME_ROLE must not own application tables: ${config.runtimeRole}`,
+      );
+    }
+
+    if (runtimeRole.hasRoleMemberships) {
+      throw new Error(
+        `DATABASE_RUNTIME_ROLE must not have any role membership: ${config.runtimeRole}`,
+      );
+    }
+
     if (
       runtimeRole.isSuperuser ||
       runtimeRole.bypassesRls ||
-      runtimeRole.ownsApplicationTables
+      runtimeRole.canCreateDatabases ||
+      runtimeRole.canCreateRoles ||
+      runtimeRole.canReplicate
     ) {
       throw new Error(
         `DATABASE_RUNTIME_ROLE is not a restricted runtime login: ${config.runtimeRole}`,
@@ -54,38 +80,24 @@ export async function provisionRuntimeRole(
     }
 
     await admin.begin(async (transaction) => {
-      await transaction`
-        do $role$
-        begin
-          create role ship_tickets_app;
-        exception
-          when duplicate_object then null;
-        end
-        $role$
-      `;
-      await transaction`
-        alter role ship_tickets_app
-          nologin nosuperuser nocreatedb nocreaterole
-          inherit noreplication nobypassrls
-      `;
       await transaction`revoke create on schema public from public`;
       await transaction`
         revoke create on schema public from ${transaction(config.runtimeRole)}
       `;
-      await transaction`grant usage on schema public to ship_tickets_app`;
       await transaction`
-        grant usage on type organization_role to ship_tickets_app
+        grant usage on schema public to ${transaction(config.runtimeRole)}
       `;
       await transaction`
-        grant select, insert on users, auth_identities to ship_tickets_app
+        grant usage on type organization_role to ${transaction(config.runtimeRole)}
+      `;
+      await transaction`
+        grant select, insert on users, auth_identities
+        to ${transaction(config.runtimeRole)}
       `;
       await transaction`
         grant select, insert, update, delete
         on organizations, org_members
-        to ship_tickets_app
-      `;
-      await transaction`
-        grant ship_tickets_app to ${transaction(config.runtimeRole)}
+        to ${transaction(config.runtimeRole)}
       `;
     });
   } finally {

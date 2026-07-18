@@ -117,6 +117,146 @@ describe("provisionRuntimeRole", () => {
     ).rejects.toThrow(/existing login/);
   });
 
+  it("rejects membership in an application-table owner role", async () => {
+    const ownerRole = "ship_tickets_legacy_owner_test";
+    await provisionRuntimeRole({
+      databaseUrl: container.databaseUrl,
+      runtimeRole: RUNTIME_ROLE,
+    });
+    await admin`create role ${admin(ownerRole)} nologin`;
+    await admin`
+      grant ${admin(ownerRole)} to ${admin(RUNTIME_ROLE)}
+      with inherit false, set true
+    `;
+    await admin`alter table organizations owner to ${admin(ownerRole)}`;
+
+    try {
+      await expect(
+        provisionRuntimeRole({
+          databaseUrl: container.databaseUrl,
+          runtimeRole: RUNTIME_ROLE,
+        }),
+      ).rejects.toThrow(/role membership/);
+      await expect(
+        createDatabaseClient({
+          databaseUrl: runtimeDatabaseUrl,
+          maxConnections: 1,
+          prepareStatements: false,
+        }),
+      ).rejects.toThrow(/role membership/);
+    } finally {
+      await admin`alter table organizations owner to postgres`;
+      await admin`revoke ${admin(ownerRole)} from ${admin(RUNTIME_ROLE)}`;
+      await admin`drop role ${admin(ownerRole)}`;
+    }
+  });
+
+  it("does not share runtime grants between databases in one cluster", async () => {
+    const secondDatabase = "ship_tickets_runtime_isolation_test";
+    const secondRuntimeRole = "ship_tickets_runtime_b_test";
+    await provisionRuntimeRole({
+      databaseUrl: container.databaseUrl,
+      runtimeRole: RUNTIME_ROLE,
+    });
+    await admin`create role ${admin(secondRuntimeRole)}
+      login password 'runtime_b_test_password'
+      nosuperuser nocreatedb nocreaterole noreplication nobypassrls`;
+    await admin`create database ${admin(secondDatabase)}`;
+
+    const secondAdminUrl = new URL(container.databaseUrl);
+    secondAdminUrl.pathname = `/${secondDatabase}`;
+    const firstRuntimeOnSecondDatabase = new URL(secondAdminUrl);
+    firstRuntimeOnSecondDatabase.username = RUNTIME_ROLE;
+    firstRuntimeOnSecondDatabase.password = RUNTIME_PASSWORD;
+
+    try {
+      await migrateDatabase({
+        databaseUrl: secondAdminUrl.toString(),
+        migrationsFolder,
+      });
+      await provisionRuntimeRole({
+        databaseUrl: secondAdminUrl.toString(),
+        runtimeRole: secondRuntimeRole,
+      });
+
+      await expect(
+        createDatabaseClient({
+          databaseUrl: firstRuntimeOnSecondDatabase.toString(),
+          maxConnections: 1,
+          prepareStatements: false,
+        }),
+      ).rejects.toThrow(/lacks required table privileges/);
+    } finally {
+      await admin`drop database ${admin(secondDatabase)} with (force)`;
+      await admin`drop role ${admin(secondRuntimeRole)}`;
+    }
+  });
+
+  it("rejects every runtime role membership", async () => {
+    const groupRole = "ship_tickets_membership_test";
+    await provisionRuntimeRole({
+      databaseUrl: container.databaseUrl,
+      runtimeRole: RUNTIME_ROLE,
+    });
+    await admin`create role ${admin(groupRole)} nologin`;
+    await admin`
+      grant ${admin(groupRole)} to ${admin(RUNTIME_ROLE)}
+      with inherit false, set true
+    `;
+
+    try {
+      await expect(
+        provisionRuntimeRole({
+          databaseUrl: container.databaseUrl,
+          runtimeRole: RUNTIME_ROLE,
+        }),
+      ).rejects.toThrow(/role membership/);
+      await expect(
+        createDatabaseClient({
+          databaseUrl: runtimeDatabaseUrl,
+          maxConnections: 1,
+          prepareStatements: false,
+        }),
+      ).rejects.toThrow(/role membership/);
+    } finally {
+      await admin`revoke ${admin(groupRole)} from ${admin(RUNTIME_ROLE)}`;
+      await admin`drop role ${admin(groupRole)}`;
+    }
+  });
+
+  it("rejects a default role that masks the authenticated login", async () => {
+    const maskedRole = "ship_tickets_masked_login_test";
+    await provisionRuntimeRole({
+      databaseUrl: container.databaseUrl,
+      runtimeRole: RUNTIME_ROLE,
+    });
+    await admin`
+      create role ${admin(maskedRole)}
+      login password 'masked_test_password'
+      nosuperuser nocreatedb nocreaterole noreplication bypassrls
+    `;
+    await admin`grant ${admin(RUNTIME_ROLE)} to ${admin(maskedRole)}`;
+    await admin`
+      alter role ${admin(maskedRole)} set role to ${admin(RUNTIME_ROLE)}
+    `;
+
+    const maskedUrl = new URL(container.databaseUrl);
+    maskedUrl.username = maskedRole;
+    maskedUrl.password = "masked_test_password";
+
+    try {
+      await expect(
+        createDatabaseClient({
+          databaseUrl: maskedUrl.toString(),
+          maxConnections: 1,
+          prepareStatements: false,
+        }),
+      ).rejects.toThrow(/authenticated session user/);
+    } finally {
+      await admin`drop role ${admin(maskedRole)}`;
+    }
+  });
+
   it("rejects an owner runtime URL and accepts the provisioned login", async () => {
     await provisionRuntimeRole({
       databaseUrl: container.databaseUrl,

@@ -8,8 +8,13 @@ import {
 
 const secureRuntimeState: RuntimeSecurityState = {
   bypassesRls: false,
+  canCreateDatabases: false,
   canCreatePublic: false,
+  canCreateRoles: false,
+  canReplicate: false,
   hasRequiredTablePrivileges: true,
+  hasRoleMemberships: false,
+  hasRoleOverride: false,
   isSuperuser: false,
   ownsApplicationTables: false,
   role: "ship_tickets_runtime",
@@ -38,6 +43,11 @@ describe("assertRuntimeSecurityState", () => {
   it.each([
     ["superuser", { isSuperuser: true }],
     ["BYPASSRLS", { bypassesRls: true }],
+    ["database creator", { canCreateDatabases: true }],
+    ["role creator", { canCreateRoles: true }],
+    ["replication role", { canReplicate: true }],
+    ["role member", { hasRoleMemberships: true }],
+    ["default-role override", { hasRoleOverride: true }],
     ["application-table owner", { ownsApplicationTables: true }],
     ["public-schema creator", { canCreatePublic: true }],
     ["incomplete table grants", { hasRequiredTablePrivileges: false }],
