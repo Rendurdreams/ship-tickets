@@ -10,6 +10,7 @@
     "build": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/migrate-cli.ts",
+    "db:provision-runtime-role": "tsx src/provision-runtime-role-cli.ts",
     "lint": "eslint src tests",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"

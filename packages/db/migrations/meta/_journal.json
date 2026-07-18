@@ -8,6 +8,20 @@
       "when": 1784298630694,
       "tag": "0000_tired_pretty_boy",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1784302634561,
+      "tag": "0001_absent_nick_fury",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784302753812,
+      "tag": "0002_bumpy_wild_child",
+      "breakpoints": true
     }
   ]
 }
