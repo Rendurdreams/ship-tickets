@@ -10,6 +10,7 @@ export interface RuntimeSecurityState {
   readonly canCreatePublic: boolean;
   readonly canCreateRoles: boolean;
   readonly canReplicate: boolean;
+  readonly hasForbiddenTablePrivileges: boolean;
   readonly hasRequiredTablePrivileges: boolean;
   readonly hasRoleMemberships: boolean;
   readonly hasRoleOverride: boolean;
@@ -27,6 +28,7 @@ export function assertRuntimeSecurityState(state: RuntimeSecurityState): void {
     state.canReplicate && "has REPLICATION",
     state.hasRoleMemberships && "has a role membership",
     state.hasRoleOverride && "does not match the authenticated session user",
+    state.hasForbiddenTablePrivileges && "has forbidden table privileges",
     state.ownsApplicationTables && "owns an application table",
     state.canCreatePublic && "can create objects in the public schema",
     !state.hasRequiredTablePrivileges && "lacks required table privileges",
@@ -84,23 +86,36 @@ export async function createDatabaseClient(config: DatabaseConfig) {
             )
             and tables.relowner = roles.oid
         ) as "ownsApplicationTables",
-        has_table_privilege(
-          session_user,
-          'users',
-          'select, insert'
-        ) and has_table_privilege(
-          session_user,
-          'auth_identities',
-          'select, insert'
-        ) and has_table_privilege(
-          session_user,
-          'organizations',
-          'select, insert, update, delete'
-        ) and has_table_privilege(
-          session_user,
-          'org_members',
-          'select, insert, update, delete'
-        ) as "hasRequiredTablePrivileges"
+        has_table_privilege(session_user, 'users', 'update')
+          or has_table_privilege(session_user, 'users', 'delete')
+          or has_table_privilege(session_user, 'users', 'truncate')
+          or has_table_privilege(session_user, 'users', 'references')
+          or has_table_privilege(session_user, 'users', 'trigger')
+          or has_table_privilege(session_user, 'auth_identities', 'update')
+          or has_table_privilege(session_user, 'auth_identities', 'delete')
+          or has_table_privilege(session_user, 'auth_identities', 'truncate')
+          or has_table_privilege(session_user, 'auth_identities', 'references')
+          or has_table_privilege(session_user, 'auth_identities', 'trigger')
+          or has_table_privilege(session_user, 'organizations', 'truncate')
+          or has_table_privilege(session_user, 'organizations', 'references')
+          or has_table_privilege(session_user, 'organizations', 'trigger')
+          or has_table_privilege(session_user, 'org_members', 'truncate')
+          or has_table_privilege(session_user, 'org_members', 'references')
+          or has_table_privilege(session_user, 'org_members', 'trigger')
+          as "hasForbiddenTablePrivileges",
+        has_table_privilege(session_user, 'users', 'select')
+          and has_table_privilege(session_user, 'users', 'insert')
+          and has_table_privilege(session_user, 'auth_identities', 'select')
+          and has_table_privilege(session_user, 'auth_identities', 'insert')
+          and has_table_privilege(session_user, 'organizations', 'select')
+          and has_table_privilege(session_user, 'organizations', 'insert')
+          and has_table_privilege(session_user, 'organizations', 'update')
+          and has_table_privilege(session_user, 'organizations', 'delete')
+          and has_table_privilege(session_user, 'org_members', 'select')
+          and has_table_privilege(session_user, 'org_members', 'insert')
+          and has_table_privilege(session_user, 'org_members', 'update')
+          and has_table_privilege(session_user, 'org_members', 'delete')
+          as "hasRequiredTablePrivileges"
       from pg_roles roles
       where roles.rolname = session_user
     `;

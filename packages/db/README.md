@@ -9,7 +9,7 @@ Provider-neutral PostgreSQL access for Ship Tickets. Application code imports th
 - `DATABASE_MAX_CONNECTIONS` defaults to `1` per application instance and is limited to `1..20`.
 - `DATABASE_PREPARE_STATEMENTS` defaults to `false` because transaction-mode poolers such as Supavisor do not support prepared statements reliably.
 
-`createDatabaseClient` attests the authenticated PostgreSQL `session_user` before returning a Drizzle handle. The dedicated runtime login must equal `current_user`, have no role memberships, own no application tables, and have none of `SUPERUSER`, `BYPASSRLS`, `CREATEDB`, `CREATEROLE`, replication, or `CREATE` on `public`. It must hold the required table grants directly.
+`createDatabaseClient` attests the authenticated PostgreSQL `session_user` before returning a Drizzle handle. The dedicated runtime login must equal `current_user`, have no role memberships, own no application tables, and have none of `SUPERUSER`, `BYPASSRLS`, `CREATEDB`, `CREATEROLE`, replication, `CREATE` on `public`, or forbidden effective table privileges such as `TRUNCATE`. It must hold every required table grant.
 
 ## Runtime role provisioning
 
@@ -20,7 +20,7 @@ Database migrations contain only database-local schema, indexes, and RLS policie
 3. Run `pnpm --filter @ship-tickets/db db:provision-runtime-role` once per database.
 4. Set `DATABASE_URL` to the provisioned login's runtime/pooler connection.
 
-The idempotent provisioning command rejects logins with role memberships, revokes inherited `CREATE` on `public`, and grants the minimum identity and tenant-table privileges directly to the named login in that database. It creates neither credentials nor shared cluster-global grant roles, so provisioning one database cannot authorize another database's runtime login.
+The idempotent provisioning command rejects logins with role memberships, revokes the login's existing privileges on the managed schema, type, and tables, then grants the exact minimum contract directly in that database. It creates neither credentials nor shared cluster-global grant roles, so provisioning one database cannot authorize another database's runtime login. Startup also rejects forbidden effective privileges inherited from sources such as `PUBLIC`.
 
 ## Tenant isolation
 

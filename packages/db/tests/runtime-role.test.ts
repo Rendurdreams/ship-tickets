@@ -108,6 +108,69 @@ describe("provisionRuntimeRole", () => {
     }
   });
 
+  it("normalizes pre-existing table privileges to the minimum contract", async () => {
+    await admin`
+      grant update, delete on auth_identities to ${admin(RUNTIME_ROLE)}
+    `;
+    await admin`
+      grant truncate on organizations, org_members to ${admin(RUNTIME_ROLE)}
+    `;
+
+    await provisionRuntimeRole({
+      databaseUrl: container.databaseUrl,
+      runtimeRole: RUNTIME_ROLE,
+    });
+
+    const [privileges] = await admin<
+      { canMutateIdentities: boolean; canTruncateTenants: boolean }[]
+    >`
+      select
+        has_table_privilege(
+          ${RUNTIME_ROLE},
+          'auth_identities',
+          'update'
+        ) or has_table_privilege(
+          ${RUNTIME_ROLE},
+          'auth_identities',
+          'delete'
+        ) as "canMutateIdentities",
+        has_table_privilege(
+          ${RUNTIME_ROLE},
+          'organizations',
+          'truncate'
+        ) or has_table_privilege(
+          ${RUNTIME_ROLE},
+          'org_members',
+          'truncate'
+        ) as "canTruncateTenants"
+    `;
+
+    expect(privileges).toEqual({
+      canMutateIdentities: false,
+      canTruncateTenants: false,
+    });
+  });
+
+  it("rejects forbidden effective privileges granted through PUBLIC", async () => {
+    await provisionRuntimeRole({
+      databaseUrl: container.databaseUrl,
+      runtimeRole: RUNTIME_ROLE,
+    });
+    await admin`grant truncate on organizations to public`;
+
+    try {
+      await expect(
+        createDatabaseClient({
+          databaseUrl: runtimeDatabaseUrl,
+          maxConnections: 1,
+          prepareStatements: false,
+        }),
+      ).rejects.toThrow(/forbidden table privileges/);
+    } finally {
+      await admin`revoke truncate on organizations from public`;
+    }
+  });
+
   it("refuses to provision a login that does not exist", async () => {
     await expect(
       provisionRuntimeRole({

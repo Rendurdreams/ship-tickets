@@ -82,7 +82,17 @@ export async function provisionRuntimeRole(
     await admin.begin(async (transaction) => {
       await transaction`revoke create on schema public from public`;
       await transaction`
-        revoke create on schema public from ${transaction(config.runtimeRole)}
+        revoke all privileges on schema public
+        from ${transaction(config.runtimeRole)}
+      `;
+      await transaction`
+        revoke all privileges on type organization_role
+        from ${transaction(config.runtimeRole)}
+      `;
+      await transaction`
+        revoke all privileges
+        on users, auth_identities, organizations, org_members
+        from ${transaction(config.runtimeRole)}
       `;
       await transaction`
         grant usage on schema public to ${transaction(config.runtimeRole)}
