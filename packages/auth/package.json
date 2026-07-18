@@ -8,7 +8,12 @@
   },
   "scripts": {
     "build": "tsc --noEmit",
-    "lint": "eslint src",
-    "typecheck": "tsc --noEmit"
+    "lint": "eslint src tests",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "2.110.7",
+    "zod": "4.4.3"
   }
 }
