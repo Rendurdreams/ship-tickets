@@ -32,9 +32,15 @@ importers:
 
   apps/web:
     dependencies:
+      '@ship-tickets/auth':
+        specifier: workspace:*
+        version: link:../../packages/auth
       '@ship-tickets/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@ship-tickets/db':
+        specifier: workspace:*
+        version: link:../../packages/db
       next:
         specifier: 16.2.10
         version: 16.2.10(@babel/core@7.29.7)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
