@@ -13,7 +13,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@supabase/supabase-js": "2.110.7",
+    "@supabase/supabase-js": "2.110.8",
     "zod": "4.4.3"
   }
 }
