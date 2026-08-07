@@ -21,6 +21,6 @@
   },
   "devDependencies": {
     "drizzle-kit": "0.31.10",
-    "tsx": "4.23.1"
+    "tsx": "4.23.5"
   }
 }
